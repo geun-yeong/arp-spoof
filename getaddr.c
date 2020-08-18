@@ -89,10 +89,10 @@ int find_remote_mac_by_arp(pcap_t *if_handle, uint8_t *local_mac, uint32_t local
 
             struct libnet_arp_hdr *rcv_arp_hdr = (struct libnet_arp_hdr *)(&rcv_frame[sizeof(struct libnet_ethernet_hdr)]);
             struct arp_body *rcv_payload = (struct arp_body *)(&rcv_frame[sizeof(struct libnet_ethernet_hdr) + sizeof(struct libnet_arp_hdr)]);
-            uint32_t sip = (*((uint32_t *)rcv_payload->sip));
+            uint32_t sip = (*((uint32_t *)rcv_payload->snd_ip));
 
             if( ntohs(rcv_arp_hdr->ar_op) == ARPOP_REPLY && sip == remote_ip) {
-                memcpy(remote_mac, rcv_payload->smac, 6);
+                memcpy(remote_mac, rcv_payload->snd_mac, 6);
                 success = 1;
                 break;
             }
