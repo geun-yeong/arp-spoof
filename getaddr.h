@@ -2,8 +2,7 @@
 #define GETADDR_H
 
 #include <pcap.h>
-
-#include "sendpkt.h"
+#include <libnet.h>
 
 #define IS_ARP(x) (ntohs(((struct libnet_ethernet_hdr *)(x))->ether_type) == (uint16_t)ETHERTYPE_ARP)
 #define IS_IPV4(x) (ntohs(((struct libnet_ethernet_hdr *)(x))->ether_type) == (uint16_t)ETHERTYPE_IP)
